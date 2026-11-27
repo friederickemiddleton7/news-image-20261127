@@ -284,7 +284,7 @@ def draw_poster() -> Image.Image:
     c = Canvas()
 
     # ---- header: the day named in the largest type on the poster ----
-    header_h = s(100)
+    header_h = s(88)
     c.rect((0, 0, W, header_h), fill="#101B2E")
     c.line((0, header_h, W, header_h), fill=AMBER, width=s(2))
 
@@ -303,9 +303,9 @@ def draw_poster() -> Image.Image:
                sub_font, BODY, name="subtitle")
 
     # ---- grid: all 32 stories in 4 columns; uniform 3-line cards ----
-    grid_y = header_h + s(10)
+    grid_y = header_h + s(4)
     margin = s(24)
-    gap = s(6)
+    gap = s(4)
     cols = 4
     card_w = (W - 2 * margin - (cols - 1) * gap) // cols
     inner_w = card_w - 2 * s(6)
@@ -315,13 +315,17 @@ def draw_poster() -> Image.Image:
     place_font = font(s(19), False)
     # 19 CSS px caps have ~18.5 device px of ink; 39 device px is the line box.
     line_h = 39
-    card_pad_v = s(4)
+    card_pad_v = s(3)
     head_lines_max = 3
     card_h = (2 + head_lines_max) * line_h + 2 * card_pad_v
 
-    row_heights = []
+    summary_font = font(s(19), False)
+    lead_extra = line_h + s(6)  # every lead card gains one factual summary line
+    rows: List[Tuple[Story, ...]] = []
+    row_heights: List[int] = []
     for start in range(0, len(ALL_STORIES), cols):
         row = ALL_STORIES[start:start + cols]
+        rows.append(row)
         for st in row:
             n = len(wrap_words(st.headline, head_font, inner_w))
             assert 1 <= n <= head_lines_max, \
@@ -330,29 +334,33 @@ def draw_poster() -> Image.Image:
                 f"{st.sid}: region too wide: {st.region!r}"
             assert fit_text(place_label(st), place_font, inner_w), \
                 f"{st.sid}: place too wide: {place_label(st)!r}"
-        row_heights.append(card_h)
+        row_heights.append(card_h + (lead_extra if any(st.lead for st in row) else 0))
 
     grid_bottom = grid_y + sum(row_heights) + gap * (len(row_heights) - 1)
     assert grid_bottom <= H - s(24), \
         f"grid overflows canvas: bottom={grid_bottom} > {H - s(24)}"
 
-    for idx, story in enumerate(ALL_STORIES):
-        col, row = idx % cols, idx // cols
-        x0 = margin + col * (card_w + gap)
-        y0 = grid_y + row * (card_h + gap)
-        x1, y1 = x0 + card_w, y0 + card_h
-        outline = AMBER if story.lead else HAIR
-        border = s(2) if story.lead else s(1)
-        c.rect((x0, y0, x1, y1), fill=CARD, outline=outline, width=border,
-               radius=s(5))
-        c.rect((x0, y0 + s(3), x0 + s(3), y1 - s(3)),
-               fill=REGION_COLORS[story.region])
-        draw_card(c, story, x0 + s(6), y0 + card_pad_v,
-                  x1 - s(6), y1 - card_pad_v,
-                  head_font=head_font, region_font=region_font,
-                  place_font=place_font, line_h=line_h,
-                  head_lines_max=head_lines_max, inner_w=inner_w,
-                  prefix=story.sid)
+    y_row = grid_y
+    for row_idx, row in enumerate(rows):
+        row_h = row_heights[row_idx]
+        for col, story in enumerate(row):
+            x0 = margin + col * (card_w + gap)
+            y0 = y_row
+            y1 = y0 + row_h
+            x1 = x0 + card_w
+            outline = AMBER if story.lead else HAIR
+            border = s(2) if story.lead else s(1)
+            c.rect((x0, y0, x1, y1), fill=CARD, outline=outline, width=border,
+                   radius=s(5))
+            c.rect((x0, y0 + s(3), x0 + s(3), y1 - s(3)),
+                   fill=REGION_COLORS[story.region])
+            draw_card(c, story, x0 + s(6), y0 + card_pad_v,
+                      x1 - s(6), y1 - card_pad_v,
+                      head_font=head_font, region_font=region_font,
+                      place_font=place_font, line_h=line_h,
+                      head_lines_max=head_lines_max, inner_w=inner_w,
+                      prefix=story.sid, summary_font=summary_font)
+        y_row += row_h + gap
 
     # ---- footer ----
     foot_font = font(s(19), False)
@@ -368,7 +376,8 @@ def draw_card(c: Canvas, story: Story, x0: int, y0: int, x1: int, y1: int,
               region_font: ImageFont.FreeTypeFont,
               place_font: ImageFont.FreeTypeFont,
               line_h: int, head_lines_max: int, inner_w: int,
-              prefix: str) -> None:
+              prefix: str,
+              summary_font: "ImageFont.FreeTypeFont | None" = None) -> None:
     """Draw one story card: region chip, place, headline; all measured."""
     card_bounds = (x0 - s(4), y0, x1 + s(4), y1)
     c.text((x0, y0), story.region, region_font, REGION_COLORS[story.region],
@@ -388,6 +397,11 @@ def draw_card(c: Canvas, story: Story, x0: int, y0: int, x1: int, y1: int,
                bounds=card_bounds, name=f"{prefix}-head{i}")
         yy += line_h
     assert yy - line_h <= y1, f"{prefix}: headline overflows card"
+
+    if story.lead and summary_font is not None:
+        line = fit_line(story.summary, summary_font, inner_w)
+        c.text((x0, yy), line, summary_font, BODY,
+               bounds=card_bounds, name=prefix + "-summary")
 
 
 
